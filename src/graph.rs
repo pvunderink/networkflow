@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Debug,
     iter::Sum,
     ops::{Add, Div, Sub},
@@ -8,21 +8,14 @@ use std::{
 use num::{One, Zero};
 use try_partialord::TryMinMax;
 
-pub enum FlowNodeType<T> {
+pub enum FlowNodeType {
     Source,
     Sink,
-    Inner(T),
+    Inner,
 }
 
-struct FlowNode<T> {
-    index: usize,
-    node_type: FlowNodeType<T>,
-}
-
-impl<T> FlowNode<T> {
-    fn handle(&self) -> NodeHandle {
-        NodeHandle { index: self.index }
-    }
+struct FlowNode {
+    node_type: FlowNodeType,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -80,12 +73,13 @@ impl FlowEdgeHandle {
     }
 }
 
-pub struct FlowPath<C>
+struct FlowPath<C>
 where
     C: Copy + PartialOrd + Add<Output = C> + Sub<Output = C> + Zero,
 {
     edges: Vec<FlowEdgeHandle>,
     capacity: C,
+    #[cfg(test)]
     total_cost: f64,
 }
 
@@ -101,134 +95,36 @@ where
         + Div<Output = C>
         + Debug,
 {
-    fn new<T>(graph: &FlowGraph<T, C>, edges: Vec<FlowEdge<C>>) -> Self {
-        let minimum_group = graph
-            .groups
-            .iter()
-            .filter_map(|group| {
-                let group_capacity = group.capacity_increment_of_edges(graph, &edges)?;
-                if group_capacity < C::zero() {
-                    None
-                } else {
-                    Some((group, group_capacity))
-                }
-            })
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
+    fn new(edges: Vec<FlowEdge<C>>) -> Self {
         let capacity = edges
             .iter()
-            .map(|edge| {
-                let edge_capacity = graph.get_edge_capacity(edge);
-                if let Some((minimum_group, minimum_group_capacity)) = minimum_group {
-                    if minimum_group.edges.contains(&edge.handle())
-                        && minimum_group_capacity < edge_capacity
-                    {
-                        minimum_group_capacity
-                    } else {
-                        edge_capacity
-                    }
-                } else {
-                    edge_capacity
-                }
-            })
+            .map(|edge| edge.residual_capacity())
             .try_min()
             .expect("Invalid capacities on edges")
             .expect("Empty path");
 
+        #[cfg(test)]
         let total_cost = edges.iter().map(|edge| edge.cost).sum();
 
         FlowPath {
             edges: edges.into_iter().map(|e| e.handle()).collect(),
             capacity,
+            #[cfg(test)]
             total_cost,
         }
     }
 }
 
-pub struct SharedCapacityGroup<C>
-where
-    C: Copy + PartialOrd + Add<Output = C> + Sub<Output = C> + Zero + Sum,
-{
-    capacity: C,
-    edges: HashSet<FlowEdgeHandle>,
-}
-
-impl<C> SharedCapacityGroup<C>
-where
-    C: Copy
-        + PartialOrd
-        + Add<Output = C>
-        + Sub<Output = C>
-        + Zero
-        + One
-        + Sum
-        + Div<Output = C>
-        + Debug,
-{
-    pub fn new(capacity: C, edges: &[FlowEdgeHandle]) -> Self {
-        SharedCapacityGroup {
-            capacity,
-            edges: edges.iter().cloned().collect(),
-        }
-    }
-
-    pub fn empty_with_capacity(capacity: C) -> Self {
-        SharedCapacityGroup {
-            capacity,
-            edges: HashSet::new(),
-        }
-    }
-
-    pub fn add_edge(&mut self, edge: FlowEdgeHandle) {
-        self.edges.insert(edge);
-    }
-
-    /// Calculate the residual capacity available in this group.
-    fn residual_capacity<T>(&self, graph: &FlowGraph<T, C>) -> C {
-        let used_capacity: C = self.edges.iter().map(|edge| graph.get_flow(*edge)).sum();
-        self.capacity - used_capacity
-    }
-
-    /// Find the capacity increment available for the given edges in this group.
-    /// Returns None if none of the edges are part of this group.
-    ///
-    /// The increment is divided equally among the edges in the group that are part of the given edges.
-    /// This does not work for integers if the capacity is not divisible by the number of edges.
-    fn capacity_increment_of_edges<T>(
-        &self,
-        graph: &FlowGraph<T, C>,
-        edges: &Vec<FlowEdge<C>>,
-    ) -> Option<C> {
-        let used_capacity: C = edges
-            .iter()
-            .filter(|edge| self.edges.contains(&edge.handle()))
-            .map(|edge| graph.get_flow(edge.handle()))
-            .sum();
-
-        let count = edges
-            .iter()
-            .filter_map(|edge| self.edges.contains(&edge.handle()).then(|| C::one()))
-            .sum();
-
-        if count == C::zero() {
-            return None;
-        }
-
-        Some((self.capacity - used_capacity) / count)
-    }
-}
-
-pub struct FlowGraph<T, C>
+pub struct FlowGraph<C>
 where
     C: Copy + PartialOrd + Add<Output = C> + Sub<Output = C> + Zero + One + Sum + Div<Output = C>,
 {
-    nodes: Vec<FlowNode<T>>,
+    nodes: Vec<FlowNode>,
     edges: HashMap<(NodeHandle, NodeHandle), Vec<FlowEdge<C>>>,
     edge_count: usize, // count of regular edges (i.e. excluding residual edges), used as edge_id
-    groups: Vec<SharedCapacityGroup<C>>,
 }
 
-impl<T, C> FlowGraph<T, C>
+impl<C> FlowGraph<C>
 where
     C: Copy
         + PartialOrd
@@ -245,7 +141,6 @@ where
             nodes: Vec::new(),
             edges: HashMap::new(),
             edge_count: 0,
-            groups: Vec::new(),
         };
 
         graph.add_node_raw(FlowNodeType::Source);
@@ -262,14 +157,14 @@ where
         NodeHandle { index: 1 }
     }
 
-    fn add_node_raw(&mut self, node_type: FlowNodeType<T>) -> NodeHandle {
+    fn add_node_raw(&mut self, node_type: FlowNodeType) -> NodeHandle {
         let index = self.nodes.len();
-        self.nodes.push(FlowNode { index, node_type });
+        self.nodes.push(FlowNode { node_type });
         NodeHandle { index }
     }
 
-    pub fn add_node(&mut self, node: T) -> NodeHandle {
-        self.add_node_raw(FlowNodeType::Inner(node))
+    pub fn add_node(&mut self) -> NodeHandle {
+        self.add_node_raw(FlowNodeType::Inner)
     }
 
     pub fn add_edge(
@@ -314,11 +209,6 @@ where
         handle
     }
 
-    pub fn add_shared_capacity_group(&mut self, capacity: C, edges: &[FlowEdgeHandle]) {
-        let group = SharedCapacityGroup::new(capacity, edges);
-        self.groups.push(group)
-    }
-
     fn get_edges(&self, from: NodeHandle, to: NodeHandle) -> impl Iterator<Item = &FlowEdge<C>> {
         self.edges
             .get(&(from, to))
@@ -331,36 +221,6 @@ where
         self.edges
             .iter()
             .flat_map(|((u, v), edges)| edges.iter().map(|e| (*u, *v, e)))
-    }
-
-    fn get_edge_capacity_groups(
-        &self,
-        edge: FlowEdgeHandle,
-    ) -> impl Iterator<Item = &SharedCapacityGroup<C>> {
-        self.groups
-            .iter()
-            .filter(move |group| group.edges.contains(&edge))
-    }
-
-    fn get_edge_capacity(&self, edge: &FlowEdge<C>) -> C {
-        // Check if the edge is part of any shared capacity group
-        if let Some(minimum_group_capacity) = self
-            .groups
-            .iter()
-            .filter(|group| group.edges.contains(&edge.handle()))
-            .map(|group| group.residual_capacity(self))
-            .try_min()
-            .expect("Invalid shared capacity")
-            && minimum_group_capacity < edge.residual_capacity()
-        {
-            minimum_group_capacity
-        } else {
-            edge.residual_capacity()
-        }
-    }
-
-    fn has_residual_capacity(&self, edge: &FlowEdge<C>) -> bool {
-        self.get_edge_capacity(edge) > C::zero()
     }
 
     fn find_smallest_cost_path_with_capacity(
@@ -377,7 +237,7 @@ where
             let mut updated = false;
 
             for (u, v, edge) in self.edges() {
-                if self.has_residual_capacity(edge)
+                if edge.has_residual_capacity()
                     && distances[u.index] != f64::INFINITY
                     && distances[u.index] + edge.cost < distances[v.index]
                 {
@@ -407,7 +267,7 @@ where
             // Find the cheapest edge with residual capacity between pred and current
             let cheapest_edge = self
                 .get_edges(NodeHandle { index: pred }, NodeHandle { index: current })
-                .filter(|edge| self.has_residual_capacity(edge))
+                .filter(|edge| edge.has_residual_capacity())
                 .min_by(|a, b| a.cost.partial_cmp(&b.cost).unwrap())
                 .expect("No edge found with residual capacity during path reconstruction");
 
@@ -416,7 +276,7 @@ where
         }
         path.reverse();
 
-        Some(FlowPath::new(self, path))
+        Some(FlowPath::new(path))
     }
 
     fn get_edge_mut(&mut self, edge: FlowEdgeHandle) -> Option<&mut FlowEdge<C>> {
@@ -464,7 +324,7 @@ where
         edge_entry.capacity
     }
 
-    pub fn get_node_type(&self, handle: NodeHandle) -> &FlowNodeType<T> {
+    pub fn get_node_type(&self, handle: NodeHandle) -> &FlowNodeType {
         &self.nodes[handle.index].node_type
     }
 }
@@ -475,23 +335,23 @@ mod tests {
 
     #[test]
     fn test_graph_creation() {
-        let graph: FlowGraph<(), usize> = FlowGraph::new();
+        let graph: FlowGraph<usize> = FlowGraph::new();
         assert_eq!(graph.nodes.len(), 2); // Source and Sink
     }
 
     #[test]
     fn test_add_node_and_edge() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
+        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
         graph.add_edge(node_a, node_b, 10, 1.0);
     }
 
     #[test]
     fn test_bellman_ford() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
+        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 1.0);
         graph.add_edge(node_a, node_b, 5, 1.0);
         graph.add_edge(node_b, graph.sink(), 10, 1.0);
@@ -501,9 +361,9 @@ mod tests {
 
     #[test]
     fn test_bellman_with_cheaper_path() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
+        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 5.0);
         graph.add_edge(node_a, node_b, 5, 10.0);
         graph.add_edge(node_a, node_b, 5, -1.0);
@@ -516,9 +376,9 @@ mod tests {
 
     #[test]
     fn test_bellman_ford_with_negative_cycle() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
+        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 5.0);
         graph.add_edge(node_a, node_b, 5, 10.0);
         graph.add_edge(node_b, node_a, 5, -11.0);
@@ -529,9 +389,9 @@ mod tests {
 
     #[test]
     fn test_bellman_ford_with_no_capacity() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
+        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 5.0);
         graph.add_edge(node_a, node_b, 0, 10.0);
         graph.add_edge(node_b, graph.sink(), 10, 1.0);
@@ -544,10 +404,10 @@ mod tests {
 
     #[test]
     fn test_maximize_flow() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize> = FlowGraph::new();
 
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
 
         let s_to_a = graph.add_edge(graph.source(), node_a, 10, 1.0);
         let a_to_b = graph.add_edge(node_a, node_b, 5, 1.0);
@@ -563,10 +423,10 @@ mod tests {
 
     #[test]
     fn test_maximize_flow_prefers_cheaper_path() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize> = FlowGraph::new();
 
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
 
         let s_to_a = graph.add_edge(graph.source(), node_a, 10, 1.0);
         let a_to_b_1 = graph.add_edge(node_a, node_b, 5, 1.0);
@@ -580,57 +440,5 @@ mod tests {
         assert_eq!(graph.get_flow(a_to_b_1), 1);
         assert_eq!(graph.get_flow(a_to_b_2), 5);
         assert_eq!(graph.get_flow(b_to_t), 6);
-    }
-
-    #[test]
-    fn test_maximize_flow_with_shared_capacity() {
-        let mut graph: FlowGraph<(), usize> = FlowGraph::new();
-
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
-        let node_c = graph.add_node(());
-
-        let s_to_a = graph.add_edge(graph.source(), node_a, 10, 1.0);
-        let s_to_c = graph.add_edge(graph.source(), node_c, 10, 1.0);
-        let a_to_b = graph.add_edge(node_a, node_b, 10, 1.0);
-        let b_to_t = graph.add_edge(node_b, graph.sink(), 10, 1.0);
-        let c_to_t = graph.add_edge(node_c, graph.sink(), 10, 1.0);
-
-        graph.add_shared_capacity_group(5, &[a_to_b, s_to_c]);
-
-        // act
-        graph.maximize_flow();
-
-        assert_eq!(graph.get_flow(s_to_a), 0);
-        assert_eq!(graph.get_flow(s_to_c), 5);
-        assert_eq!(graph.get_flow(a_to_b), 0);
-        assert_eq!(graph.get_flow(b_to_t), 0);
-        assert_eq!(graph.get_flow(c_to_t), 5);
-    }
-
-    #[test]
-    fn test_maximize_flow_with_shared_capacity_along_same_path() {
-        let mut graph: FlowGraph<(), f64> = FlowGraph::new();
-
-        let node_a = graph.add_node(());
-        let node_b = graph.add_node(());
-        let node_c = graph.add_node(());
-
-        let s_to_a = graph.add_edge(graph.source(), node_a, 10., 1.0);
-        let s_to_c = graph.add_edge(graph.source(), node_c, 10., 1.0);
-        let a_to_b = graph.add_edge(node_a, node_b, 10., 1.0);
-        let b_to_t = graph.add_edge(node_b, graph.sink(), 10., 1.0);
-        let c_to_t = graph.add_edge(node_c, graph.sink(), 10., 1.0);
-
-        graph.add_shared_capacity_group(5., &[s_to_a, a_to_b]);
-
-        // act
-        graph.maximize_flow();
-
-        assert_eq!(graph.get_flow(s_to_a), 2.5);
-        assert_eq!(graph.get_flow(s_to_c), 10.);
-        assert_eq!(graph.get_flow(a_to_b), 2.5);
-        assert_eq!(graph.get_flow(b_to_t), 2.5);
-        assert_eq!(graph.get_flow(c_to_t), 10.);
     }
 }

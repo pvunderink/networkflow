@@ -1,7 +1,6 @@
 use core::f64;
 
 use energy_flow::graph::FlowGraph;
-use mcmf::{Capacity, Cost, GraphBuilder, Vertex};
 
 const HIGHLY_PREFER: f64 = 1.0;
 const PREFER: f64 = 10.0;
@@ -9,14 +8,14 @@ const NEUTRAL: f64 = 100.0;
 const AVOID: f64 = 1000.0;
 
 fn main() {
-    let mut graph = FlowGraph::<(), f64>::new();
+    let mut graph = FlowGraph::<f64>::new();
 
-    let solar = graph.add_node(());
-    let grid_source = graph.add_node(());
-    let grid_sink = graph.add_node(());
-    let battery_source = graph.add_node(());
-    let battery_sink = graph.add_node(());
-    let charger = graph.add_node(());
+    let solar = graph.add_node();
+    let grid_source = graph.add_node();
+    let grid_sink = graph.add_node();
+    let battery_source = graph.add_node();
+    let battery_sink = graph.add_node();
+    let charger = graph.add_node();
 
     let solar_to_charger = graph.add_edge(solar, charger, f64::INFINITY, HIGHLY_PREFER);
     let solar_to_grid_sink = graph.add_edge(solar, grid_sink, f64::INFINITY, AVOID);
@@ -76,6 +75,7 @@ fn main() {
     );
 }
 
+// use mcmf::{Capacity, Cost, GraphBuilder, Vertex};
 // fn main() {
 //     let from_solar = 40;
 //     let from_grid = 30;
