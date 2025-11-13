@@ -2,13 +2,13 @@ use core::f64;
 
 use energy_flow::graph::FlowGraph;
 
-const HIGHLY_PREFER: f64 = 1.0;
-const PREFER: f64 = 10.0;
-const NEUTRAL: f64 = 100.0;
-const AVOID: f64 = 1000.0;
+const HIGHLY_PREFER: isize = 1;
+const PREFER: isize = 10;
+const NEUTRAL: isize = 100;
+const AVOID: isize = 1000;
 
 fn main() {
-    let mut graph = FlowGraph::<f64>::new();
+    let mut graph = FlowGraph::new();
 
     let solar = graph.add_node();
     let grid_source = graph.add_node();

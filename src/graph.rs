@@ -1,12 +1,8 @@
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    iter::Sum,
-    ops::{Add, Div, Sub},
-};
+use std::{collections::HashMap, fmt::Debug};
 
-use num::{One, Zero};
 use try_partialord::TryMinMax;
+
+use crate::{cost::Cost, flow::Flow};
 
 pub enum FlowNodeType {
     Source,
@@ -24,31 +20,33 @@ pub struct NodeHandle {
 }
 
 #[derive(Clone, Debug)]
-struct FlowEdge<C>
+struct FlowEdge<F, C>
 where
-    C: Copy + PartialOrd + Add<Output = C> + Sub<Output = C> + Zero,
+    F: Flow,
+    C: Cost,
 {
     from: NodeHandle,
     to: NodeHandle,
-    capacity: C,
-    cost: f64,
+    capacity: F,
+    cost: C,
     edge_id: usize,
 }
 
-impl<C> FlowEdge<C>
+impl<F, C> FlowEdge<F, C>
 where
-    C: Copy + PartialOrd + Add<Output = C> + Sub<Output = C> + Zero,
+    F: Flow,
+    C: Cost,
 {
-    fn residual_capacity(&self) -> C {
+    fn residual_capacity(&self) -> F {
         self.capacity
     }
 
     fn has_residual_capacity(&self) -> bool {
-        self.capacity > C::zero()
+        self.capacity > F::zero()
     }
 
-    fn handle(&self) -> FlowEdgeHandle {
-        FlowEdgeHandle {
+    fn handle(&self) -> EdgeHandle {
+        EdgeHandle {
             from: self.from,
             to: self.to,
             edge_id: self.edge_id,
@@ -57,15 +55,15 @@ where
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct FlowEdgeHandle {
+pub struct EdgeHandle {
     from: NodeHandle,
     to: NodeHandle,
     edge_id: usize,
 }
 
-impl FlowEdgeHandle {
-    fn reverse(&self) -> FlowEdgeHandle {
-        FlowEdgeHandle {
+impl EdgeHandle {
+    fn reverse(&self) -> EdgeHandle {
+        EdgeHandle {
             from: self.to,
             to: self.from,
             edge_id: self.edge_id,
@@ -73,29 +71,22 @@ impl FlowEdgeHandle {
     }
 }
 
-struct FlowPath<C>
+struct FlowPath<F, C>
 where
-    C: Copy + PartialOrd + Add<Output = C> + Sub<Output = C> + Zero,
+    F: Flow,
 {
-    edges: Vec<FlowEdgeHandle>,
-    capacity: C,
-    #[cfg(test)]
-    total_cost: f64,
+    edges: Vec<EdgeHandle>,
+    capacity: F,
+    #[allow(dead_code)]
+    total_cost: C,
 }
 
-impl<C> FlowPath<C>
+impl<F, C> FlowPath<F, C>
 where
-    C: Copy
-        + PartialOrd
-        + Add<Output = C>
-        + Sub<Output = C>
-        + Zero
-        + One
-        + Sum
-        + Div<Output = C>
-        + Debug,
+    F: Flow,
+    C: Cost,
 {
-    fn new(edges: Vec<FlowEdge<C>>) -> Self {
+    fn new(edges: Vec<FlowEdge<F, C>>) -> Self {
         let capacity = edges
             .iter()
             .map(|edge| edge.residual_capacity())
@@ -103,38 +94,30 @@ where
             .expect("Invalid capacities on edges")
             .expect("Empty path");
 
-        #[cfg(test)]
         let total_cost = edges.iter().map(|edge| edge.cost).sum();
 
         FlowPath {
             edges: edges.into_iter().map(|e| e.handle()).collect(),
             capacity,
-            #[cfg(test)]
             total_cost,
         }
     }
 }
 
-pub struct FlowGraph<C>
+pub struct FlowGraph<F, C>
 where
-    C: Copy + PartialOrd + Add<Output = C> + Sub<Output = C> + Zero + One + Sum + Div<Output = C>,
+    F: Flow,
+    C: Cost,
 {
     nodes: Vec<FlowNode>,
-    edges: HashMap<(NodeHandle, NodeHandle), Vec<FlowEdge<C>>>,
+    edges: HashMap<(NodeHandle, NodeHandle), Vec<FlowEdge<F, C>>>,
     edge_count: usize, // count of regular edges (i.e. excluding residual edges), used as edge_id
 }
 
-impl<C> FlowGraph<C>
+impl<F, C> FlowGraph<F, C>
 where
-    C: Copy
-        + PartialOrd
-        + Add<Output = C>
-        + Sub<Output = C>
-        + Zero
-        + One
-        + Sum
-        + Div<Output = C>
-        + Debug,
+    F: Flow,
+    C: Cost,
 {
     pub fn new() -> Self {
         let mut graph = FlowGraph {
@@ -171,9 +154,9 @@ where
         &mut self,
         from: NodeHandle,
         to: NodeHandle,
-        capacity: C,
-        cost: f64,
-    ) -> FlowEdgeHandle {
+        capacity: F,
+        cost: C,
+    ) -> EdgeHandle {
         let edge_id = self.edge_count;
         self.edge_count += 1;
 
@@ -189,7 +172,7 @@ where
         let backward_edge = FlowEdge {
             from: to,
             to: from,
-            capacity: C::zero(), // Initially zero capacity on the backward edge
+            capacity: F::zero(), // Initially zero capacity on the backward edge
             cost: -cost,
             edge_id,
         };
@@ -209,7 +192,7 @@ where
         handle
     }
 
-    fn get_edges(&self, from: NodeHandle, to: NodeHandle) -> impl Iterator<Item = &FlowEdge<C>> {
+    fn get_edges(&self, from: NodeHandle, to: NodeHandle) -> impl Iterator<Item = &FlowEdge<F, C>> {
         self.edges
             .get(&(from, to))
             .map(|edges| edges.iter())
@@ -217,7 +200,7 @@ where
             .flatten()
     }
 
-    fn edges(&self) -> impl Iterator<Item = (NodeHandle, NodeHandle, &FlowEdge<C>)> {
+    fn edges(&self) -> impl Iterator<Item = (NodeHandle, NodeHandle, &FlowEdge<F, C>)> {
         self.edges
             .iter()
             .flat_map(|((u, v), edges)| edges.iter().map(|e| (*u, *v, e)))
@@ -227,10 +210,10 @@ where
         &self,
         from: NodeHandle,
         to: NodeHandle,
-    ) -> Option<FlowPath<C>> {
-        let mut distances = vec![f64::INFINITY; self.nodes.len()];
+    ) -> Option<FlowPath<F, C>> {
+        let mut distances = vec![None; self.nodes.len()];
         let mut predecessors = vec![None; self.nodes.len()];
-        distances[from.index] = 0.0;
+        distances[from.index] = Some(C::zero());
 
         // Relax edges |V| times (an extra iteration to detect negative cycles)
         for i in 0..self.nodes.len() {
@@ -238,14 +221,15 @@ where
 
             for (u, v, edge) in self.edges() {
                 if edge.has_residual_capacity()
-                    && distances[u.index] != f64::INFINITY
-                    && distances[u.index] + edge.cost < distances[v.index]
+                    && let Some(distance) = distances[u.index]
+                    && (distances[v.index].is_none()
+                        || distance + edge.cost < distances[v.index].unwrap())
                 {
                     if i == self.nodes.len() - 1 {
                         return None; // Negative cycle detected
                     }
 
-                    distances[v.index] = distances[u.index] + edge.cost;
+                    distances[v.index] = Some(distance + edge.cost);
                     predecessors[v.index] = Some(u.index);
                     updated = true;
                 }
@@ -257,7 +241,7 @@ where
         }
 
         // Reconstruct path
-        if distances[to.index] == f64::INFINITY {
+        if distances[to.index].is_none() {
             return None; // No path exists
         }
 
@@ -279,13 +263,13 @@ where
         Some(FlowPath::new(path))
     }
 
-    fn get_edge_mut(&mut self, edge: FlowEdgeHandle) -> Option<&mut FlowEdge<C>> {
+    fn get_edge_mut(&mut self, edge: EdgeHandle) -> Option<&mut FlowEdge<F, C>> {
         self.edges
             .get_mut(&(edge.from, edge.to))
             .and_then(|edges| edges.iter_mut().find(|e| e.edge_id == edge.edge_id))
     }
 
-    fn augment_flow_along_path(&mut self, path: &FlowPath<C>) {
+    fn augment_flow_along_path(&mut self, path: &FlowPath<F, C>) {
         for edge in &path.edges {
             let edge_entry = self.get_edge_mut(*edge).expect("Edge not found");
             edge_entry.capacity = edge_entry.capacity - path.capacity;
@@ -299,14 +283,7 @@ where
     }
 
     /// Maximize flow from source to sink while minimizing cost, using Ford-Fulkerson with successive shortest paths.
-    ///
-    /// ### Termination
-    /// This function always terminates if there are no shared capacity groups, or if using non-integer capacities.
-    ///
-    /// ### Non-termination
-    /// This function might not terminate if using shared capacity groups with integer capacities.
-    /// Particularly, if edges with shared capacity are along the same path and the shared capacity is not divisible by
-    /// the number of edges.
+    /// The shortest paths are found using the Bellman-Ford algorithm to handle negative costs.
     pub fn maximize_flow(&mut self) {
         while let Some(path) =
             self.find_smallest_cost_path_with_capacity(self.source(), self.sink())
@@ -315,7 +292,7 @@ where
         }
     }
 
-    pub fn get_flow(&self, edge: FlowEdgeHandle) -> C {
+    pub fn get_flow(&self, edge: EdgeHandle) -> F {
         // The flow along an edge is equal to the capacity of the reverse edge
         let edge_entry = self
             .get_edges(edge.to, edge.from)
@@ -335,13 +312,13 @@ mod tests {
 
     #[test]
     fn test_graph_creation() {
-        let graph: FlowGraph<usize> = FlowGraph::new();
+        let graph: FlowGraph<usize, f64> = FlowGraph::new();
         assert_eq!(graph.nodes.len(), 2); // Source and Sink
     }
 
     #[test]
     fn test_add_node_and_edge() {
-        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
         let node_a = graph.add_node();
         let node_b = graph.add_node();
         graph.add_edge(node_a, node_b, 10, 1.0);
@@ -349,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_bellman_ford() {
-        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
         let node_a = graph.add_node();
         let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 1.0);
@@ -361,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_bellman_with_cheaper_path() {
-        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
         let node_a = graph.add_node();
         let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 5.0);
@@ -376,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_bellman_ford_with_negative_cycle() {
-        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
         let node_a = graph.add_node();
         let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 5.0);
@@ -389,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_bellman_ford_with_no_capacity() {
-        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
         let node_a = graph.add_node();
         let node_b = graph.add_node();
         graph.add_edge(graph.source(), node_a, 10, 5.0);
@@ -404,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_maximize_flow() {
-        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
 
         let node_a = graph.add_node();
         let node_b = graph.add_node();
@@ -423,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_maximize_flow_prefers_cheaper_path() {
-        let mut graph: FlowGraph<usize> = FlowGraph::new();
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
 
         let node_a = graph.add_node();
         let node_b = graph.add_node();
