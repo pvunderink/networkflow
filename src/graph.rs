@@ -79,6 +79,7 @@ where
     F: Flow,
     C: Cost,
 {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut graph = FlowGraph {
             nodes: Vec::new(),
@@ -201,9 +202,9 @@ where
         }
 
         // Reconstruct path
-        if distances[to.index].is_none() {
-            return None; // No path exists
-        }
+
+        // Return None if no path exists
+        distances[to.index]?;
 
         let mut path = Vec::new();
         let mut current = to.index;
