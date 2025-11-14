@@ -2,6 +2,10 @@
 name = "networkflow"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+keywords = ["network flow", "min cost flow", "max flow", "graph algorithms"]
+description = "A collection of network flow algorithms."
+readme = "README.md"
 
 [dependencies]
 num = { version = "0.4.3" }
