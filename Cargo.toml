@@ -6,6 +6,7 @@ license = "MIT"
 keywords = ["network flow", "min cost flow", "max flow", "graph algorithms"]
 description = "A collection of network flow algorithms."
 readme = "README.md"
+repository = "https://github.com/pvunderink/networkflow"
 
 [dependencies]
 num = { version = "0.4.3" }
