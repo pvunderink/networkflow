@@ -3,14 +3,7 @@ name = "networkflow"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-keywords = [
-    "networkflow",
-    "flow",
-    "max-flow",
-    "min-cost",
-    "graph",
-    "algorithms",
-]
+keywords = ["networkflow", "max-flow", "min-cost", "graph", "algorithm"]
 description = "A collection of network flow algorithms."
 readme = "README.md"
 repository = "https://github.com/pvunderink/networkflow"
