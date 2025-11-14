@@ -1,6 +1,6 @@
 # networkflow
 
-A Rust library for modeling and optimizing energy flow using minimum cost maximum flow algorithms.
+A Rust library for network flow algorithms.
 
 ## Features
 
