@@ -6,7 +6,7 @@ use std::{
 use num::Zero;
 
 pub trait Cost:
-    Copy + PartialOrd + Add<Output = Self> + Sub<Output = Self> + Sum + Neg<Output = Self> + Zero
+    Copy + PartialOrd + Neg<Output = Self> + Add<Output = Self> + Sub<Output = Self> + Sum + Zero
 {
 }
 

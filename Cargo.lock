@@ -9,27 +9,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
-name = "energy-flow"
+name = "networkflow"
 version = "0.1.0"
 dependencies = [
- "mcmf",
  "num",
  "try-partialord",
-]
-
-[[package]]
-name = "gcc"
-version = "0.3.55"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f5f3913fa0bfe7ee1fd8248b6b9f42a5af4b9d65ec2dd2c3c26132b950ecfc2"
-
-[[package]]
-name = "mcmf"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cb289e5187a41de06144d7dd0e1c11f07f047fb7406b507bb365e6a6c378d93"
-dependencies = [
- "gcc",
 ]
 
 [[package]]

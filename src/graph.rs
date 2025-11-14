@@ -1,75 +1,8 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::collections::HashMap;
 
 use try_partialord::TryMinMax;
 
-use crate::{cost::Cost, flow::Flow};
-
-pub enum FlowNodeType {
-    Source,
-    Sink,
-    Inner,
-}
-
-struct FlowNode {
-    node_type: FlowNodeType,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct NodeHandle {
-    index: usize,
-}
-
-#[derive(Clone, Debug)]
-struct FlowEdge<F, C>
-where
-    F: Flow,
-    C: Cost,
-{
-    from: NodeHandle,
-    to: NodeHandle,
-    capacity: F,
-    cost: C,
-    edge_id: usize,
-}
-
-impl<F, C> FlowEdge<F, C>
-where
-    F: Flow,
-    C: Cost,
-{
-    fn residual_capacity(&self) -> F {
-        self.capacity
-    }
-
-    fn has_residual_capacity(&self) -> bool {
-        self.capacity > F::zero()
-    }
-
-    fn handle(&self) -> EdgeHandle {
-        EdgeHandle {
-            from: self.from,
-            to: self.to,
-            edge_id: self.edge_id,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct EdgeHandle {
-    from: NodeHandle,
-    to: NodeHandle,
-    edge_id: usize,
-}
-
-impl EdgeHandle {
-    fn reverse(&self) -> EdgeHandle {
-        EdgeHandle {
-            from: self.to,
-            to: self.from,
-            edge_id: self.edge_id,
-        }
-    }
-}
+use crate::{EdgeHandle, FlowEdge, FlowNode, FlowNodeType, NodeHandle, cost::Cost, flow::Flow};
 
 struct FlowPath<F, C>
 where
@@ -300,10 +233,6 @@ where
             .expect("Edge not found");
         edge_entry.capacity
     }
-
-    pub fn get_node_type(&self, handle: NodeHandle) -> &FlowNodeType {
-        &self.nodes[handle.index].node_type
-    }
 }
 
 #[cfg(test)]
@@ -417,5 +346,157 @@ mod tests {
         assert_eq!(graph.get_flow(a_to_b_1), 1);
         assert_eq!(graph.get_flow(a_to_b_2), 5);
         assert_eq!(graph.get_flow(b_to_t), 6);
+    }
+
+    #[test]
+    fn test_negative_cost_edge_flow() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let node_a = graph.add_node();
+
+        let s_to_a = graph.add_edge(graph.source(), node_a, 10, -2.0); // Negative cost
+        let a_to_t = graph.add_edge(node_a, graph.sink(), 10, 1.0);
+
+        graph.maximize_flow();
+
+        assert_eq!(graph.get_flow(s_to_a), 10);
+        assert_eq!(graph.get_flow(a_to_t), 10);
+    }
+
+    #[test]
+    fn test_complex_network_with_multiple_paths() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
+        let node_c = graph.add_node();
+        let node_d = graph.add_node();
+
+        let s_to_a = graph.add_edge(graph.source(), node_a, 5, 2.0);
+        let s_to_b = graph.add_edge(graph.source(), node_b, 8, 1.0);
+        let a_to_c = graph.add_edge(node_a, node_c, 4, 1.0);
+        let b_to_c = graph.add_edge(node_b, node_c, 3, 3.0);
+        let b_to_d = graph.add_edge(node_b, node_d, 6, 1.5);
+        let c_to_t = graph.add_edge(node_c, graph.sink(), 7, 0.5);
+        let d_to_t = graph.add_edge(node_d, graph.sink(), 9, 1.0);
+
+        graph.maximize_flow();
+
+        assert_eq!(graph.get_flow(s_to_a), 4);
+        assert_eq!(graph.get_flow(s_to_b), 8);
+        assert_eq!(graph.get_flow(a_to_c), 4);
+        assert_eq!(graph.get_flow(b_to_c), 2);
+        assert_eq!(graph.get_flow(b_to_d), 6);
+        assert_eq!(graph.get_flow(c_to_t), 6);
+        assert_eq!(graph.get_flow(d_to_t), 6);
+    }
+
+    #[test]
+    fn test_zero_flow_due_to_high_cost() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let node_a = graph.add_node();
+
+        let s_to_a = graph.add_edge(graph.source(), node_a, 10, 1000.0); // Very high cost
+        let a_to_t = graph.add_edge(node_a, graph.sink(), 10, 1.0);
+
+        graph.maximize_flow();
+
+        // Flow should still be maximized regardless of cost
+        assert_eq!(graph.get_flow(s_to_a), 10);
+        assert_eq!(graph.get_flow(a_to_t), 10);
+    }
+
+    #[test]
+    fn test_bottleneck_with_cost_preference() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
+        let node_c = graph.add_node();
+
+        // Two paths with different costs, but one has a bottleneck
+        let s_to_a = graph.add_edge(graph.source(), node_a, 10, 1.0);
+        let s_to_b = graph.add_edge(graph.source(), node_b, 10, 2.0);
+        let a_to_c = graph.add_edge(node_a, node_c, 3, 1.0); // Bottleneck
+        let b_to_c = graph.add_edge(node_b, node_c, 8, 1.0);
+        let c_to_t = graph.add_edge(node_c, graph.sink(), 15, 1.0);
+
+        graph.maximize_flow();
+
+        assert_eq!(graph.get_flow(s_to_a), 3); // Limited by bottleneck
+        assert_eq!(graph.get_flow(s_to_b), 8); // Uses remaining capacity
+        assert_eq!(graph.get_flow(a_to_c), 3);
+        assert_eq!(graph.get_flow(b_to_c), 8);
+        assert_eq!(graph.get_flow(c_to_t), 11);
+    }
+
+    #[test]
+    fn test_single_edge_maximum_flow() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let edge = graph.add_edge(graph.source(), graph.sink(), 7, 3.5);
+
+        graph.maximize_flow();
+
+        assert_eq!(graph.get_flow(edge), 7);
+    }
+
+    #[test]
+    fn test_disconnected_nodes() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let node_a = graph.add_node();
+        let _node_b = graph.add_node(); // Disconnected node
+
+        let s_to_a = graph.add_edge(graph.source(), node_a, 5, 1.0);
+        let a_to_t = graph.add_edge(node_a, graph.sink(), 5, 1.0);
+
+        graph.maximize_flow();
+
+        assert_eq!(graph.get_flow(s_to_a), 5);
+        assert_eq!(graph.get_flow(a_to_t), 5);
+    }
+
+    #[test]
+    fn test_parallel_edges_different_costs() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let node_a = graph.add_node();
+
+        let s_to_a = graph.add_edge(graph.source(), node_a, 10, 1.0);
+        let a_to_t_1 = graph.add_edge(node_a, graph.sink(), 4, 0.5); // Cheaper
+        let a_to_t_2 = graph.add_edge(node_a, graph.sink(), 4, 2.0); // More expensive
+        let a_to_t_3 = graph.add_edge(node_a, graph.sink(), 4, 1.0); // Middle cost
+
+        graph.maximize_flow();
+
+        assert_eq!(graph.get_flow(s_to_a), 10);
+        assert_eq!(graph.get_flow(a_to_t_1), 4); // Should use cheapest first
+        assert_eq!(graph.get_flow(a_to_t_3), 4); // Then middle cost
+        assert_eq!(graph.get_flow(a_to_t_2), 2); // Finally most expensive
+    }
+
+    #[test]
+    fn test_avoid_cycle_with_positive_cost() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        let node_a = graph.add_node();
+        let node_b = graph.add_node();
+        let node_c = graph.add_node();
+
+        let s_to_a = graph.add_edge(graph.source(), node_a, 10, 1.0);
+        let a_to_b = graph.add_edge(node_a, node_b, 10, 1.0);
+        let b_to_c = graph.add_edge(node_b, node_c, 10, 1.0);
+        let c_to_a = graph.add_edge(node_c, node_a, 5, 2.0); // Creates cycle
+        let b_to_t = graph.add_edge(node_b, graph.sink(), 8, 1.0);
+
+        graph.maximize_flow();
+
+        assert_eq!(graph.get_flow(s_to_a), 8);
+        assert_eq!(graph.get_flow(a_to_b), 8);
+        assert_eq!(graph.get_flow(b_to_c), 0); // Should not use cycle
+        assert_eq!(graph.get_flow(c_to_a), 0);
+        assert_eq!(graph.get_flow(b_to_t), 8);
     }
 }
