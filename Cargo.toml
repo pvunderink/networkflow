@@ -1,12 +1,12 @@
 [package]
 name = "networkflow"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
-license = "MIT"
-keywords = ["networkflow", "max-flow", "min-cost", "graph"]
 description = "A collection of network flow algorithms."
 readme = "README.md"
 repository = "https://github.com/pvunderink/networkflow"
+license = "MIT"
+keywords = ["graph", "max-flow", "min-cost", "networkflow"]
 
 [dependencies]
 num = { version = "0.4.3" }
