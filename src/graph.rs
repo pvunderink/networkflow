@@ -64,6 +64,7 @@ where
 /// assert_eq!(graph.get_flow(source_to_b), 5.0);
 /// assert_eq!(graph.get_flow(c_to_sink), 10.0);
 /// ```
+#[derive(Default)]
 pub struct FlowGraph<F, C>
 where
     F: Flow,
