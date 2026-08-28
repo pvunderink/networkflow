@@ -533,10 +533,10 @@ mod tests {
     fn test_maximize_flow_is_deterministic() {
         let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
 
-        // theoretically, a non-deterministic implementation could pass this test, but
-        // the probability that a non-deterministic implementation passes this test is:
-        // (0.5)^100 = 7,8e-31, so we can be fairly certain we'll never see a false negative
-        for _ in 0..100 {
+        // theoretically, a non-deterministic implementation could pass this test,
+        // however, even if a non-deterministic implemenation has a 99% chance of generating
+        // the passing solution, there is only a (0.99)^100 = 0.0043% chance of it passing this test
+        for _ in 0..1000 {
             let node_a = graph.add_node();
 
             // two equivalent paths
