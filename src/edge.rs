@@ -35,7 +35,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EdgeHandle {
     pub(crate) from: NodeHandle,
     pub(crate) to: NodeHandle,

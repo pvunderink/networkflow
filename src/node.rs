@@ -9,7 +9,7 @@ pub(crate) struct FlowNode {
     pub(crate) node_type: FlowNodeType,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeHandle {
     pub(crate) index: usize,
 }
