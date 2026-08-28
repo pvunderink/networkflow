@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use try_partialord::TryMinMax;
 
@@ -71,7 +71,7 @@ where
     C: Cost,
 {
     nodes: Vec<FlowNode>,
-    edges: HashMap<(NodeHandle, NodeHandle), Vec<FlowEdge<F, C>>>,
+    edges: BTreeMap<(NodeHandle, NodeHandle), Vec<FlowEdge<F, C>>>,
     edge_count: usize, // count of regular edges (i.e. excluding residual edges), used as edge_id
 }
 
@@ -83,8 +83,8 @@ where
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut graph = FlowGraph {
-            nodes: Vec::new(),
-            edges: HashMap::new(),
+            nodes: Default::default(),
+            edges: Default::default(),
             edge_count: 0,
         };
 
@@ -527,5 +527,30 @@ mod tests {
         assert_eq!(graph.get_flow(b_to_c), 0); // Should not use cycle
         assert_eq!(graph.get_flow(c_to_a), 0);
         assert_eq!(graph.get_flow(b_to_t), 8);
+    }
+
+    #[test]
+    fn test_maximize_flow_is_deterministic() {
+        let mut graph: FlowGraph<usize, f64> = FlowGraph::new();
+
+        // theoretically, a non-deterministic implementation could pass this test, but
+        // the probability that a non-deterministic implementation passes this test is:
+        // (0.5)^100 = 7,8e-31, so we can be fairly certain we'll never see a false negative
+        for _ in 0..100 {
+            let node_a = graph.add_node();
+
+            // two equivalent paths
+            let s_to_a1 = graph.add_edge(graph.source(), node_a, 1, 1.0);
+            let s_to_a2 = graph.add_edge(graph.source(), node_a, 1, 1.0);
+
+            let a_to_t = graph.add_edge(node_a, graph.sink(), 1, 1.0);
+
+            graph.maximize_flow();
+
+            // maximize_flow always picks s_to_a1, even though s_to_a2 has the same cost
+            assert_eq!(graph.get_flow(s_to_a1), 1);
+            assert_eq!(graph.get_flow(s_to_a2), 0);
+            assert_eq!(graph.get_flow(a_to_t), 1);
+        }
     }
 }
