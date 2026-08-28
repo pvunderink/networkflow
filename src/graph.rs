@@ -535,7 +535,7 @@ mod tests {
 
         // theoretically, a non-deterministic implementation could pass this test,
         // however, even if a non-deterministic implemenation has a 99% chance of generating
-        // the passing solution, there is only a (0.99)^100 = 0.0043% chance of it passing this test
+        // the passing solution, there is only a (0.99)^1000 = 0.0043% chance of it passing this test
         for _ in 0..1000 {
             let node_a = graph.add_node();
 
